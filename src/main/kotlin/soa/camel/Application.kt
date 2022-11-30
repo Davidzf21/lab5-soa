@@ -12,6 +12,8 @@ import org.springframework.stereotype.Controller
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseBody
+import soa.camel.Router.MagicNumbers.def
+import soa.camel.Router.MagicNumbers.value
 
 @SpringBootApplication
 class Application
@@ -40,9 +42,26 @@ class SearchController(private val producerTemplate: ProducerTemplate) {
 class Router(meterRegistry: MeterRegistry) : RouteBuilder() {
 
     private val perKeywordMessages = TaggedCounter("per-keyword-messages", "keyword", meterRegistry)
-
+    object MagicNumbers {
+        const val value = 5
+        const val def = 4
+    }
     override fun configure() {
         from(DIRECT_ROUTE)
+            .process { exchange ->
+                val keywords: String = exchange.getIn()
+                    .getHeader("keywords") as? String ?: ""
+                val (max, remain) = keywords.split(" ")
+                    .partition { it.startsWith("max:") }
+                exchange.getIn().setHeader("keywords", remain.joinToString(" "))
+                exchange.getIn().setHeader("count", value)
+                max.firstOrNull()
+                    ?.drop(def)
+                    ?.toIntOrNull()
+                    ?.let { count ->
+                        exchange.getIn().setHeader("count", count)
+                    }
+            }
             .toD("twitter-search:\${header.keywords}")
             .wireTap(LOG_ROUTE)
             .wireTap(COUNT_ROUTE)
